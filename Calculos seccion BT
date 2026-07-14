@@ -1,0 +1,744 @@
+# ⚡ Cálculo de Secciones BT — UNE-HD 60364
+
+Aplicación web para el dimensionado de cables de baja tensión conforme a la normativa española (REBT, ITC-BT-19, ITC-BT-47) y europea (UNE-HD 60364-5-52).
+
+## Funcionalidades
+
+- **Criterio térmico**: selección de sección por intensidad admisible (Iz) con tablas completas UNE-HD 60364-5-52
+- **Criterio de caída de tensión**: iteración automática hasta cumplir el límite de ΔU
+- **Verificación de cortocircuito**: Ik mín en carga, poder de corte, tiempo térmico admisible
+- **Veredicto final** global con todas las comprobaciones
+
+### Tablas normativas incluidas
+
+| Parámetro | Opciones |
+|---|---|
+| Método de instalación | B1, C, E, F |
+| Material conductor | Cu, Al |
+| Aislamiento | XLPE, PVC |
+| Conductores cargados | 2 (monofásico), 3 (trifásico) |
+
+### Factores de corrección
+
+- **kt** (temperatura): calculado automáticamente a partir de T ambiente y tipo de aislamiento
+- **kg** (agrupamiento): entrada manual
+
+### Parámetros de cálculo
+
+- Resistividad ρ según material y aislamiento (Cu/XLPE: 0,0225 Ω·mm²/m)
+- Reactancia X = 0,08 Ω/km
+- Factor k de cortocircuito (Cu/XLPE: 143, Cu/PVC: 115, Al/XLPE: 94, Al/PVC: 76)
+- Calibres normalizados de protección: 6 a 630 A
+- Secciones normalizadas: 1,5 a 300 mm²
+
+## Uso
+
+### Opción 1 — Abrir directamente
+
+Abrir `index.html` en cualquier navegador. No requiere servidor ni dependencias.
+
+### Opción 2 — PWA en móvil
+
+1. Abrir en Chrome
+2. Menú ⋮ → "Añadir a pantalla de inicio"
+
+### Opción 3 — Deploy en Netlify
+
+1. Arrastrar la carpeta al panel de [Netlify Drop](https://app.netlify.com/drop)
+
+## Estructura
+
+```
+index.html    ← Aplicación completa (HTML + CSS + JS autocontenido)
+README.md     ← Este archivo
+```
+
+## Normativa de referencia
+
+- REBT (RD 842/2002) — Reglamento Electrotécnico para Baja Tensión
+- ITC-BT-07 — Redes subterráneas de distribución
+- ITC-BT-19 — Instalaciones interiores: prescripciones generales
+- ITC-BT-47 — Instalación de receptores: motores
+- UNE-HD 60364-5-52 — Selección e instalación de equipos eléctricos: canalizaciones
+
+## Licencia
+
+Uso interno.
+
+.DS_Store
+Thumbs.db
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Cálculo Secciones BT — UNE-HD 60364</title>
+<link rel="manifest" href="data:application/json,{&quot;name&quot;:&quot;Calc Secciones BT&quot;,&quot;short_name&quot;:&quot;SeccionesBT&quot;,&quot;start_url&quot;:&quot;.&quot;,&quot;display&quot;:&quot;standalone&quot;,&quot;background_color&quot;:&quot;%230a1018&quot;,&quot;theme_color&quot;:&quot;%230d1a28&quot;}">
+<style>
+  :root {
+    --bg: #0a1018; --bg2: #0d1520; --bg3: #141e2a;
+    --border: #1e2a38; --border2: #2a3a4a;
+    --text: #c8d8e8; --text2: #8899aa; --text3: #556677;
+    --accent: #3a7bd5; --green: #0a6640; --red: #a82a2a;
+    --mono: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg); color: var(--text);
+    max-width: 540px; margin: 0 auto;
+    -webkit-font-smoothing: antialiased;
+  }
+  input, select {
+    background: var(--bg); border: 1px solid var(--border2); border-radius: 4px;
+    color: #e0e8f0; padding: 7px 8px; font-size: 13px; width: 100%;
+    font-family: var(--mono);
+  }
+  select { appearance: auto; }
+  input:focus, select:focus { outline: none; border-color: var(--accent); }
+  button {
+    border: none; cursor: pointer; border-radius: 6px;
+    font-size: 13px; font-weight: 700; letter-spacing: 0.04em;
+  }
+
+  /* HEADER */
+  .header {
+    background: linear-gradient(135deg, #0d1a28, #162a40);
+    padding: 14px 16px 10px; border-bottom: 1px solid #1e3048;
+  }
+  .header-sub { font-size: 10px; letter-spacing: 0.15em; color: #5588aa; text-transform: uppercase; margin-bottom: 2px; }
+  .header-title { font-size: 17px; font-weight: 800; color: #e8f0f8; }
+
+  /* TABS */
+  .tabs { display: flex; overflow-x: auto; background: var(--bg2); border-bottom: 1px solid var(--border); padding: 0 8px; }
+  .tab {
+    padding: 8px 14px; cursor: pointer; font-size: 11px; white-space: nowrap;
+    border-bottom: 2px solid transparent; color: var(--text3); display: flex; align-items: center; gap: 6px;
+  }
+  .tab.active { font-weight: 700; color: #e0e8f0; border-color: var(--accent); }
+  .tab .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+  .tab-add { padding: 8px 14px; cursor: pointer; font-size: 15px; color: var(--accent); font-weight: 700; }
+
+  /* VIEW TOGGLE */
+  .view-toggle { display: flex; background: var(--bg2); border-bottom: 1px solid var(--border); }
+  .vtab {
+    flex: 1; text-align: center; padding: 8px; cursor: pointer; font-size: 12px;
+    color: var(--text3); text-transform: uppercase; letter-spacing: 0.08em;
+    border-bottom: 2px solid transparent;
+  }
+  .vtab.active { font-weight: 700; color: #e0e8f0; background: var(--bg3); border-color: var(--accent); }
+
+  /* SECTIONS */
+  .section { margin-bottom: 10px; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .section-head {
+    padding: 8px 12px; cursor: pointer; display: flex; justify-content: space-between; align-items: center;
+  }
+  .section-head span { font-size: 12px; font-weight: 700; color: #c0d0e0; letter-spacing: 0.06em; text-transform: uppercase; }
+  .section-body { padding: 8px 12px; }
+  .section-body.hidden { display: none; }
+
+  /* FORM GRID */
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
+  .field { margin-bottom: 8px; }
+  .field label { display: block; font-size: 11px; color: #6688aa; margin-bottom: 3px; letter-spacing: 0.04em; }
+
+  /* RESULT ROWS */
+  .res-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 5px 0; border-bottom: 1px solid var(--border);
+  }
+  .res-row.hl { background: rgba(255,200,50,0.07); padding: 5px 4px; margin: 0 -4px; border-radius: 3px; }
+  .res-label { color: var(--text2); font-size: 12px; }
+  .res-val { font-size: 13px; font-weight: 600; font-family: var(--mono); color: #e0e8f0; display: flex; align-items: center; gap: 6px; }
+  .res-unit { color: #667788; font-weight: 400; margin-left: 2px; }
+  .badge {
+    display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px;
+    font-weight: 700; letter-spacing: 0.03em; color: #fff;
+  }
+  .badge.ok { background: var(--green); }
+  .badge.fail { background: var(--red); }
+
+  /* VERDICT */
+  .verdict {
+    margin-top: 12px; padding: 14px 16px; border-radius: 6px; text-align: center;
+  }
+  .verdict.ok { background: linear-gradient(135deg, #0a4a20, #0a6640); border: 1px solid #1a8a50; }
+  .verdict.fail { background: linear-gradient(135deg, #5a1515, #8a2020); border: 1px solid #aa3030; }
+  .verdict-sub { font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 4px; }
+  .verdict-main { font-size: 18px; font-weight: 800; color: #fff; font-family: var(--mono); }
+  .verdict-detail { font-size: 12px; margin-top: 6px; }
+
+  /* ACTIONS */
+  .actions { display: flex; gap: 8px; margin-top: 12px; }
+  .btn-calc { flex: 1; padding: 12px; background: linear-gradient(135deg, #2a5a9a, #3a7bd5); color: #fff; }
+  .btn-all { padding: 12px 16px; border: 1px solid var(--border2); background: var(--bg3); color: var(--text2); }
+  .btn-del { padding: 12px 14px; border: 1px solid #3a2020; background: #1a1010; color: #aa6666; }
+
+  /* BOTTOM BAR */
+  .bottom-bar {
+    position: fixed; bottom: 0; left: 0; right: 0; background: #0d1520ee;
+    border-top: 1px solid var(--border); padding: 8px 16px;
+    display: flex; justify-content: center; gap: 10px; backdrop-filter: blur(8px);
+    max-width: 540px; margin: 0 auto; z-index: 10;
+  }
+  .bottom-chip {
+    cursor: pointer; padding: 4px 10px; border-radius: 4px; font-size: 10px;
+    font-weight: 600; text-align: center;
+  }
+  .bottom-chip.ok { background: #0a3a20; border: 1px solid #1a6a40; color: #80d0a0; }
+  .bottom-chip.fail { background: #3a1010; border: 1px solid #6a2020; color: #ff9999; }
+  .bottom-chip div:last-child { font-family: var(--mono); }
+
+  .content { padding: 12px 12px 90px; }
+  .empty-state { text-align: center; padding: 40px; color: #445566; }
+  .empty-state .icon { font-size: 32px; margin-bottom: 8px; }
+
+  /* Tabla resumen */
+  .summary-table { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 10px; }
+  .summary-table th { background: var(--bg3); color: var(--text2); padding: 6px 4px; text-align: left; border: 1px solid var(--border); font-weight: 600; }
+  .summary-table td { padding: 5px 4px; border: 1px solid var(--border); font-family: var(--mono); font-size: 11px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div style="display:flex;justify-content:space-between;align-items:center">
+    <div>
+      <div class="header-sub">UNE-HD 60364 · ITC-BT-19/47</div>
+      <div class="header-title">Cálculo de Secciones BT</div>
+    </div>
+    <div style="background:#1a2a3a;border-radius:4px;padding:3px 8px;font-size:10px;color:#6699bb;border:1px solid #2a3a4a">v2.0</div>
+  </div>
+</div>
+
+<div class="tabs" id="tabBar"></div>
+<div class="view-toggle">
+  <div class="vtab active" id="vDatos" onclick="setView('edit')">DATOS</div>
+  <div class="vtab" id="vResultados" onclick="setView('results')">RESULTADOS</div>
+</div>
+
+<div class="content" id="content"></div>
+<div class="bottom-bar" id="bottomBar" style="display:none"></div>
+
+<script>
+// ============================================
+// BASE DE DATOS NORMATIVA (UNE-HD 60364-5-52)
+// ============================================
+
+const SECTIONS = [1.5,2.5,4,6,10,16,25,35,50,70,95,120,150,185,240,300];
+const PROT_SIZES = [6,10,13,16,20,25,32,40,50,63,80,100,125,160,200,250,315,400,500,630];
+
+// Iz[método][material][aislamiento][conductores_cargados] = array indexado por SECTIONS
+const IZ = {
+  B1: {
+    Cu: {
+      XLPE: { 2:[20,27,37,47,65,87,110,137,167,214,259,301,343,391,468,538], 3:[17.5,24,32,41,57,76,96,119,144,184,223,259,299,341,403,464] },
+      PVC:  { 2:[15.5,21,28,36,50,68,89,110,134,171,207,239,275,314,370,426], 3:[13.5,18,24,31,42,56,73,89,108,136,164,188,216,245,286,328] }
+    },
+    Al: {
+      XLPE: { 2:[15.5,21,28,36,50,67,84,105,128,164,199,232,264,300,360,414], 3:[13.5,18.5,25,32,44,59,73,91,110,141,171,200,230,262,310,358] },
+      PVC:  { 2:[12,16.5,22,28,39,53,68,84,103,131,159,184,211,241,285,328], 3:[10.5,14,18.5,24,32,43,57,70,84,107,129,149,170,194,227,261] }
+    }
+  },
+  C: {
+    Cu: {
+      XLPE: { 2:[26,36,49,63,86,115,149,185,225,289,352,410,473,542,641,741], 3:[22,30,40,51,70,94,119,147,179,229,278,322,371,424,500,576] },
+      PVC:  { 2:[19.5,27,36,46,63,85,112,138,168,213,258,299,344,392,461,530], 3:[17.5,24,32,41,57,76,96,119,144,184,223,259,299,341,403,464] }
+    },
+    Al: {
+      XLPE: { 2:[20,28,38,49,67,90,115,143,174,223,271,316,364,418,494,571], 3:[17,23,31,40,54,73,92,113,138,177,214,249,286,327,386,445] },
+      PVC:  { 2:[15,21,28,36,49,66,86,107,130,165,200,232,265,303,357,410], 3:[13.5,18.5,25,32,44,59,74,92,111,142,172,200,230,263,311,358] }
+    }
+  },
+  E: {
+    Cu: {
+      XLPE: { 2:[26,36,49,63,86,115,149,185,225,289,352,410,473,542,641,741], 3:[23,32,42,54,75,100,127,158,192,246,298,346,399,456,538,621] },
+      PVC:  { 2:[19.5,27,36,46,63,85,112,138,168,213,258,299,344,392,461,530], 3:[18.5,25,34,43,60,80,101,126,153,196,238,276,319,364,430,497] }
+    },
+    Al: {
+      XLPE: { 2:[20,28,38,49,67,90,115,143,174,223,271,316,364,418,494,571], 3:[17.5,25,32,42,58,77,98,122,149,190,230,268,308,352,416,480] },
+      PVC:  { 2:[15,21,28,36,49,66,86,107,130,165,200,232,265,303,357,410], 3:[14,19.5,26,33,46,61,78,97,118,151,183,213,246,281,332,383] }
+    }
+  },
+  F: {
+    Cu: {
+      XLPE: { 2:[31,42,57,73,100,133,171,214,260,334,407,474,547,628,744,859], 3:[26,36,49,63,86,115,149,185,225,289,352,410,473,542,641,741] },
+      PVC:  { 2:[23,31,42,54,74,99,131,162,197,250,304,352,406,463,546,629], 3:[22,30,40,51,70,94,119,147,179,229,278,322,371,424,500,576] }
+    },
+    Al: {
+      XLPE: { 2:[24,32,44,57,77,103,132,165,201,258,314,366,422,485,574,663], 3:[20,28,38,49,67,89,115,143,174,223,271,316,364,418,494,571] },
+      PVC:  { 2:[17.5,24,32,42,57,76,101,125,151,193,234,272,313,357,421,485], 3:[17,23,31,39,54,73,92,113,138,177,214,249,286,327,386,445] }
+    }
+  }
+};
+
+const K_FACTORS = { Cu:{ XLPE:143, PVC:115 }, Al:{ XLPE:94, PVC:76 } };
+const RHO_VALUES = { Cu:{ XLPE:0.0225, PVC:0.021 }, Al:{ XLPE:0.036, PVC:0.033 } };
+const MAX_TEMPS = { XLPE:90, PVC:70 };
+
+// ============================================
+// ESTADO DE LA APLICACIÓN
+// ============================================
+
+let circuits = [{
+  id:1, tag:'001', desc:'Bomba Pasteurización',
+  power_kw:18.5, simult:1.0, utiliz:0.85, efficiency:0.86,
+  voltage:400, cosPhi:0.88, length:100, phases:3,
+  startType:'Converter', method:'E', material:'Cu', insulation:'XLPE',
+  loadedCond:3, ambientTemp:40, kg:1.0, maxCdt:5.0,
+  ikMax:6, icu:15, tClear:0.1
+}];
+
+let results = {};
+let activeTab = 0;
+let currentView = 'edit';
+
+// ============================================
+// MOTOR DE CÁLCULO
+// ============================================
+
+function getKt(insulation, ambientTemp) {
+  const tMax = MAX_TEMPS[insulation];
+  const ratio = (tMax - ambientTemp) / (tMax - 30);
+  return ratio > 0 ? Math.sqrt(ratio) : 0;
+}
+
+function getIzTable(method, material, insulation, loaded) {
+  try { return IZ[method][material][insulation][loaded]; }
+  catch(e) { return null; }
+}
+
+function calcular(c) {
+  const r = {};
+  const sinPhi = Math.sqrt(1 - c.cosPhi * c.cosPhi);
+
+  // Potencias
+  r.pDemanded = c.power_kw * c.simult * c.utiliz;
+  r.pElectric = c.power_kw / c.efficiency;
+
+  // Corriente Ib
+  if (c.phases === 3) {
+    r.Ib = (r.pElectric * 1000) / (Math.sqrt(3) * c.voltage * c.cosPhi);
+  } else {
+    r.Ib = (r.pElectric * 1000) / (c.voltage * c.cosPhi);
+  }
+
+  // Corriente de diseño cable (×1.25 motores, ITC-BT-47)
+  const isMotor = ['Direct','Star-Delta','Soft Starter','Converter'].includes(c.startType);
+  r.Idesign = isMotor ? r.Ib * 1.25 : r.Ib;
+
+  // Protección In
+  r.In = PROT_SIZES.find(p => p >= r.Ib) || null;
+  r.checkIbIn = r.In !== null && r.Ib <= r.In;
+
+  // Factor temperatura
+  r.kt = getKt(c.insulation, c.ambientTemp);
+  r.kg = c.kg;
+
+  // Tabla Iz
+  const izTable = getIzTable(c.method, c.material, c.insulation, c.loadedCond);
+  if (!izTable || !r.In) { r.error = 'Tabla Iz no disponible para esta configuración'; return r; }
+
+  // CRITERIO TÉRMICO
+  r.secThermal = null; r.izBaseThermal = null; r.izCorrThermal = null; r.idxThermal = -1;
+  for (let i = 0; i < SECTIONS.length; i++) {
+    const izCorr = izTable[i] * r.kt * r.kg;
+    if (izCorr >= r.In) {
+      r.secThermal = SECTIONS[i];
+      r.izBaseThermal = izTable[i];
+      r.izCorrThermal = izCorr;
+      r.idxThermal = i;
+      break;
+    }
+  }
+  r.checkThermal = r.izCorrThermal !== null && r.In <= r.izCorrThermal;
+  if (r.secThermal === null) { r.error = 'Ninguna sección cumple térmicamente'; return r; }
+
+  // CAÍDA DE TENSIÓN
+  const rho = RHO_VALUES[c.material][c.insulation];
+  const X = 0.08 / 1000;
+  r.rho = rho;
+  r.X_ohm_km = 0.08;
+
+  const cdtFactor = c.phases === 3 ? Math.sqrt(3) : 2;
+  function calcCdt(sec) {
+    return cdtFactor * r.Idesign * c.length * ((rho / sec) * c.cosPhi + X * sinPhi);
+  }
+
+  r.cdtThermalV = calcCdt(r.secThermal);
+  r.cdtThermalPct = (r.cdtThermalV / c.voltage) * 100;
+  r.checkCdtThermal = r.cdtThermalPct <= c.maxCdt;
+
+  // Sección por CDT (iterar)
+  r.secCdt = null; r.idxCdt = -1;
+  for (let i = r.idxThermal; i < SECTIONS.length; i++) {
+    const pct = (calcCdt(SECTIONS[i]) / c.voltage) * 100;
+    if (pct <= c.maxCdt) { r.secCdt = SECTIONS[i]; r.idxCdt = i; break; }
+  }
+
+  // SECCIÓN FINAL
+  if (r.secCdt !== null) {
+    const idxFinal = Math.max(r.idxThermal, r.idxCdt);
+    r.secFinal = SECTIONS[idxFinal];
+    r.izBaseFinal = izTable[idxFinal];
+    r.izCorrFinal = izTable[idxFinal] * r.kt * r.kg;
+    r.cdtFinalV = calcCdt(r.secFinal);
+    r.cdtFinalPct = (r.cdtFinalV / c.voltage) * 100;
+    r.checkCdtFinal = r.cdtFinalPct <= c.maxCdt;
+    r.checkFinalCable = r.In <= r.izCorrFinal && r.cdtFinalPct <= c.maxCdt;
+  } else {
+    r.error = 'Ninguna sección cumple caída de tensión'; return r;
+  }
+
+  // CORTOCIRCUITO
+  r.ikMaxOrigin = c.ikMax;
+  const kFactor = K_FACTORS[c.material][c.insulation];
+  r.kFactor = kFactor;
+
+  if (c.ikMax > 0) {
+    const Zred = c.voltage / (Math.sqrt(3) * c.ikMax * 1000);
+    const Rcable = rho * c.length / r.secFinal;
+    const Xcable = (0.08 / 1000) * c.length;
+    const Zcable = Math.sqrt(Rcable * Rcable + Xcable * Xcable);
+    if (c.phases === 3) {
+      r.ikMinLoad = (0.95 * c.voltage) / (Math.sqrt(3) * (Zred + 2 * Zcable)) / 1000;
+    } else {
+      r.ikMinLoad = (0.95 * c.voltage) / (2 * (Zred + Zcable)) / 1000;
+    }
+  } else { r.ikMinLoad = 0; }
+
+  r.icu = c.icu;
+  r.checkIcu = c.icu >= c.ikMax;
+  r.tMaxSC = r.ikMinLoad > 0 ? Math.pow((kFactor * r.secFinal) / (r.ikMinLoad * 1000), 2) : 999;
+  r.tClear = c.tClear;
+  r.checkThermalSC = c.tClear <= r.tMaxSC;
+  r.finalCheck = r.checkIbIn && r.checkFinalCable && r.checkIcu && r.checkThermalSC;
+
+  return r;
+}
+
+// ============================================
+// RENDERIZADO
+// ============================================
+
+function fmt(v, d) { d = d !== undefined ? d : 2; return v != null ? Number(v).toFixed(d) : '—'; }
+
+function badge(ok, label) {
+  return `<span class="badge ${ok ? 'ok' : 'fail'}">${label || (ok ? 'OK' : 'NO OK')}</span>`;
+}
+
+function resRow(label, value, unit, badgeVal, hl) {
+  let html = `<div class="res-row${hl ? ' hl' : ''}">`;
+  html += `<span class="res-label">${label}</span>`;
+  html += `<span class="res-val">`;
+  if (badgeVal !== undefined) html += badge(badgeVal);
+  html += `${value}`;
+  if (unit) html += `<span class="res-unit">${unit}</span>`;
+  html += `</span></div>`;
+  return html;
+}
+
+function section(title, color, bodyHtml, open) {
+  const id = 'sec_' + Math.random().toString(36).substr(2, 6);
+  return `<div class="section">
+    <div class="section-head" style="background:linear-gradient(90deg,${color}22,transparent);border-left:3px solid ${color}" onclick="document.getElementById('${id}').classList.toggle('hidden')">
+      <span>${title}</span><span style="color:#556677">▾</span>
+    </div>
+    <div class="section-body${open === false ? ' hidden' : ''}" id="${id}">${bodyHtml}</div>
+  </div>`;
+}
+
+function renderTabs() {
+  let html = '';
+  circuits.forEach((c, i) => {
+    const dot = results[i] ? `<span class="dot" style="background:${results[i].finalCheck ? '#2a8a50' : '#aa3030'}"></span>` : '';
+    html += `<div class="tab${activeTab === i ? ' active' : ''}" onclick="setActive(${i})">${c.tag}${dot}</div>`;
+  });
+  html += `<div class="tab-add" onclick="addCircuit()">+</div>`;
+  document.getElementById('tabBar').innerHTML = html;
+}
+
+function renderBottomBar() {
+  const bar = document.getElementById('bottomBar');
+  const keys = Object.keys(results);
+  if (keys.length === 0) { bar.style.display = 'none'; return; }
+  bar.style.display = 'flex';
+  let html = '';
+  circuits.forEach((c, i) => {
+    const r = results[i];
+    if (!r) return;
+    const ok = r.finalCheck;
+    html += `<div class="bottom-chip ${ok ? 'ok' : 'fail'}" onclick="setActive(${i});setView('results')">
+      <div>${c.tag}</div><div>${r.secFinal ? r.secFinal + ' mm²' : 'ERR'}</div></div>`;
+  });
+  bar.innerHTML = html;
+}
+
+function sel(name, value, options) {
+  return `<select onchange="updateField('${name}', this.value)">
+    ${options.map(o => `<option value="${o}"${String(o) === String(value) ? ' selected' : ''}>${o}</option>`).join('')}
+  </select>`;
+}
+
+function inp(name, value, step) {
+  return `<input type="number" value="${value}" step="${step || 'any'}" onchange="updateField('${name}', this.value)">`;
+}
+
+function inpText(name, value) {
+  return `<input type="text" value="${value}" onchange="updateFieldText('${name}', this.value)">`;
+}
+
+function fieldHtml(label, inputHtml) {
+  return `<div class="field"><label>${label}</label>${inputHtml}</div>`;
+}
+
+function renderEdit() {
+  const c = circuits[activeTab];
+  let html = '';
+
+  html += section('Identificación', '#5a7aaa', `
+    <div class="grid2">
+      ${fieldHtml('TAG', inpText('tag', c.tag))}
+      ${fieldHtml('Fases', sel('phases', c.phases, [3, 1]))}
+    </div>
+    ${fieldHtml('Descripción', inpText('desc', c.desc))}
+  `);
+
+  html += section('Datos Eléctricos', '#3a7bd5', `
+    <div class="grid2">
+      ${fieldHtml('Potencia (kW)', inp('power_kw', c.power_kw, 0.01))}
+      ${fieldHtml('Tensión (V)', inp('voltage', c.voltage))}
+      ${fieldHtml('cos φ', inp('cosPhi', c.cosPhi, 0.01))}
+      ${fieldHtml('Rendimiento η', inp('efficiency', c.efficiency, 0.01))}
+      ${fieldHtml('Longitud (m)', inp('length', c.length))}
+      ${fieldHtml('Arranque', sel('startType', c.startType, ['Direct','Star-Delta','Soft Starter','Converter','None']))}
+    </div>
+  `);
+
+  html += section('Factores', '#4a8a5a', `
+    <div class="grid2">
+      ${fieldHtml('F. Simultaneidad', inp('simult', c.simult, 0.01))}
+      ${fieldHtml('F. Utilización', inp('utiliz', c.utiliz, 0.01))}
+    </div>
+  `);
+
+  html += section('Cable', '#8a6a3a', `
+    <div class="grid2">
+      ${fieldHtml('Método Inst.', sel('method', c.method, ['B1','C','E','F']))}
+      ${fieldHtml('Material', sel('material', c.material, ['Cu','Al']))}
+      ${fieldHtml('Aislamiento', sel('insulation', c.insulation, ['XLPE','PVC']))}
+      ${fieldHtml('Cond. cargados', sel('loadedCond', c.loadedCond, [2, 3]))}
+    </div>
+  `);
+
+  html += section('Corrección', '#7a5aaa', `
+    <div class="grid2">
+      ${fieldHtml('T. Ambiente (°C)', inp('ambientTemp', c.ambientTemp))}
+      ${fieldHtml('F. Agrupamiento kg', inp('kg', c.kg, 0.01))}
+    </div>
+  `);
+
+  html += section('Límites y Cortocircuito', '#aa5a5a', `
+    <div class="grid2">
+      ${fieldHtml('Máx C.D.T. (%)', inp('maxCdt', c.maxCdt, 0.1))}
+      ${fieldHtml('Ik máx origen (kA)', inp('ikMax', c.ikMax, 0.01))}
+      ${fieldHtml('Icu protección (kA)', inp('icu', c.icu, 0.1))}
+      ${fieldHtml('t disparo prot. (s)', inp('tClear', c.tClear, 0.01))}
+    </div>
+  `);
+
+  html += `<div class="actions">
+    <button class="btn-calc" onclick="calcularUno()">CALCULAR</button>
+    <button class="btn-all" onclick="calcularTodos()">TODOS</button>
+    ${circuits.length > 1 ? `<button class="btn-del" onclick="removeCircuit()">✕</button>` : ''}
+  </div>`;
+
+  document.getElementById('content').innerHTML = html;
+}
+
+function renderResults() {
+  const c = circuits[activeTab];
+  const r = results[activeTab];
+
+  if (!r) {
+    document.getElementById('content').innerHTML = `<div class="empty-state"><div class="icon">⚡</div><div style="font-size:13px">Pulsa CALCULAR en la pestaña Datos</div></div>`;
+    return;
+  }
+
+  if (r.error) {
+    document.getElementById('content').innerHTML = `<div style="padding:16px;background:#2a1515;border:1px solid #5a2020;border-radius:6px;color:#ff8888;font-size:13px">⚠ ${r.error}</div>`;
+    return;
+  }
+
+  let html = '';
+
+  html += section('Corrientes', '#3a7bd5', `
+    ${resRow('P eléctrica', fmt(r.pElectric), 'kW')}
+    ${resRow('P demandada', fmt(r.pDemanded), 'kW')}
+    ${resRow('Ib (estimada)', fmt(r.Ib), 'A')}
+    ${resRow('I diseño cable', fmt(r.Idesign), 'A', undefined, true)}
+    ${resRow('In protección', fmt(r.In, 0), 'A')}
+    ${resRow('Ib ≤ In', fmt(r.Ib) + ' ≤ ' + fmt(r.In, 0), '', r.checkIbIn)}
+  `);
+
+  html += section('Criterio Térmico', '#4a8a5a', `
+    ${resRow('Método', c.method)}
+    ${resRow('kt (temperatura)', fmt(r.kt, 4))}
+    ${resRow('kg (agrupamiento)', fmt(r.kg, 2))}
+    ${resRow('Sección térmica', fmt(r.secThermal, 1), 'mm²', undefined, true)}
+    ${resRow('Iz base', fmt(r.izBaseThermal), 'A')}
+    ${resRow('Iz corregida', fmt(r.izCorrThermal), 'A')}
+    ${resRow('In ≤ Iz', fmt(r.In, 0) + ' ≤ ' + fmt(r.izCorrThermal), '', r.checkThermal)}
+  `);
+
+  html += section('C.D.T. (sec. térmica)', '#8a6a3a', `
+    ${resRow('ρ', fmt(r.rho, 4), 'Ω·mm²/m')}
+    ${resRow('X', fmt(r.X_ohm_km, 2), 'Ω/km')}
+    ${resRow('ΔU (sec. térmica)', fmt(r.cdtThermalV), 'V')}
+    ${resRow('ΔU %', fmt(r.cdtThermalPct), '%')}
+    ${resRow('ΔU ≤ ' + c.maxCdt + '%', fmt(r.cdtThermalPct) + '%', '', r.checkCdtThermal)}
+  `);
+
+  html += section('Sección Final', '#d4a030', `
+    ${resRow('Sección FINAL', fmt(r.secFinal, 1), 'mm²', undefined, true)}
+    ${resRow('Iz base final', fmt(r.izBaseFinal), 'A')}
+    ${resRow('Iz corregida final', fmt(r.izCorrFinal), 'A')}
+    ${resRow('ΔU final', fmt(r.cdtFinalV), 'V')}
+    ${resRow('ΔU final %', fmt(r.cdtFinalPct), '%')}
+    ${resRow('In ≤ Iz ∧ ΔU ≤ ' + c.maxCdt + '%', r.checkFinalCable ? 'CUMPLE' : 'NO CUMPLE', '', r.checkFinalCable)}
+  `);
+
+  html += section('Cortocircuito', '#aa5a5a', `
+    ${resRow('Ik máx origen', fmt(r.ikMaxOrigin), 'kA')}
+    ${resRow('Ik mín carga (calc)', fmt(r.ikMinLoad, 3), 'kA')}
+    ${resRow('Icu protección', fmt(r.icu), 'kA')}
+    ${resRow('Icu ≥ Ik máx', fmt(r.icu) + ' ≥ ' + fmt(r.ikMaxOrigin), '', r.checkIcu)}
+    ${resRow('Factor k', fmt(r.kFactor, 0))}
+    ${resRow('t máx admisible', fmt(r.tMaxSC, 3), 's')}
+    ${resRow('t disparo', fmt(r.tClear, 2), 's')}
+    ${resRow('t_disp ≤ t_máx', fmt(r.tClear, 2) + ' ≤ ' + fmt(r.tMaxSC, 3), '', r.checkThermalSC)}
+  `);
+
+  // Veredicto
+  const ok = r.finalCheck;
+  html += `<div class="verdict ${ok ? 'ok' : 'fail'}">
+    <div class="verdict-sub" style="color:${ok ? '#80d0a0' : '#ffaaaa'}">Veredicto Final</div>
+    <div class="verdict-main">${ok ? '✓ CUMPLE' : '✗ NO CUMPLE'}</div>
+    <div class="verdict-detail" style="color:${ok ? '#a0e0c0' : '#ffcccc'}">
+      ${c.material}/${c.insulation} — ${r.secFinal} mm² — Método ${c.method} — In ${r.In} A
+    </div>
+  </div>`;
+
+  // Tabla resumen si hay más de un circuito calculado
+  const calculados = Object.keys(results).filter(k => results[k] && !results[k].error);
+  if (calculados.length > 1) {
+    html += `<div style="margin-top:16px">`;
+    html += section('Resumen Todos', '#5a7aaa', (() => {
+      let t = `<div style="overflow-x:auto"><table class="summary-table">
+        <tr><th>TAG</th><th>Ib</th><th>In</th><th>S.Térm</th><th>S.Final</th><th>ΔU%</th><th>Estado</th></tr>`;
+      calculados.forEach(k => {
+        const ci = circuits[k], ri = results[k];
+        t += `<tr>
+          <td>${ci.tag}</td>
+          <td>${fmt(ri.Ib)}</td>
+          <td>${ri.In}</td>
+          <td>${ri.secThermal}</td>
+          <td style="font-weight:700">${ri.secFinal}</td>
+          <td>${fmt(ri.cdtFinalPct)}</td>
+          <td>${badge(ri.finalCheck)}</td>
+        </tr>`;
+      });
+      t += `</table></div>`;
+      return t;
+    })());
+    html += `</div>`;
+  }
+
+  document.getElementById('content').innerHTML = html;
+}
+
+// ============================================
+// ACCIONES
+// ============================================
+
+function setActive(i) { activeTab = i; render(); }
+
+function setView(v) {
+  currentView = v;
+  document.getElementById('vDatos').className = 'vtab' + (v === 'edit' ? ' active' : '');
+  document.getElementById('vResultados').className = 'vtab' + (v === 'results' ? ' active' : '');
+  if (v === 'edit') renderEdit();
+  else renderResults();
+}
+
+function updateField(name, value) {
+  const numFields = ['power_kw','simult','utiliz','efficiency','voltage','cosPhi','length',
+    'ambientTemp','kg','maxCdt','ikMax','icu','tClear'];
+  const intFields = ['phases','loadedCond'];
+  if (intFields.includes(name)) circuits[activeTab][name] = parseInt(value);
+  else if (numFields.includes(name)) circuits[activeTab][name] = parseFloat(value) || 0;
+  else circuits[activeTab][name] = value;
+}
+
+function updateFieldText(name, value) { circuits[activeTab][name] = value; }
+
+function calcularUno() {
+  results[activeTab] = calcular(circuits[activeTab]);
+  setView('results');
+  renderTabs();
+  renderBottomBar();
+}
+
+function calcularTodos() {
+  circuits.forEach((c, i) => { results[i] = calcular(c); });
+  setView('results');
+  renderTabs();
+  renderBottomBar();
+}
+
+function addCircuit() {
+  const n = circuits.length + 1;
+  circuits.push({
+    id:n, tag:String(n).padStart(3,'0'), desc:'Circuito ' + n,
+    power_kw:0, simult:1.0, utiliz:1.0, efficiency:0.90,
+    voltage:400, cosPhi:0.85, length:10, phases:3,
+    startType:'None', method:'E', material:'Cu', insulation:'XLPE',
+    loadedCond:3, ambientTemp:30, kg:1.0, maxCdt:5.0,
+    ikMax:0, icu:10, tClear:0.1
+  });
+  activeTab = circuits.length - 1;
+  currentView = 'edit';
+  render();
+}
+
+function removeCircuit() {
+  if (circuits.length <= 1) return;
+  circuits.splice(activeTab, 1);
+  delete results[activeTab];
+  // Reindex results
+  const newResults = {};
+  Object.keys(results).forEach(k => {
+    const ki = parseInt(k);
+    if (ki < activeTab) newResults[ki] = results[ki];
+    else if (ki > activeTab) newResults[ki - 1] = results[ki];
+  });
+  results = newResults;
+  activeTab = Math.max(0, activeTab - 1);
+  render();
+}
+
+function render() {
+  renderTabs();
+  if (currentView === 'edit') renderEdit();
+  else renderResults();
+  renderBottomBar();
+}
+
+// Iniciar
+render();
+</script>
+</body>
+</html>
