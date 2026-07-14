@@ -1,5 +1,6 @@
 # ⚡ Cálculo de Secciones BT — UNE-HD 60364
 
+
 Aplicación web para el dimensionado de cables de baja tensión conforme a la normativa española (REBT, ITC-BT-19, ITC-BT-47) y europea (UNE-HD 60364-5-52).
 
 ## Funcionalidades
